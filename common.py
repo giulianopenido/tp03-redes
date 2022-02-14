@@ -26,18 +26,13 @@ int_code_to_message_type = {
     10: "planetlist"
 }
 
-# Função que junta e formata as informações necessárias para o cabeçalho da mensagem 
-# def build_header(*args):
-#   header = ""
-#   for index, field in enumerate(args):
-#       header += str(field)
-#       if(index != len(args) - 1):
-#         header += "|"
-#   return header
-
 # Função que quebra o cabeçalho da mensagem e separa suas informações em um vetor
 def decode_message(encoded_header):
-  return list(map(int, encoded_header.decode('utf-8').split("|")))
+    raw_data = encoded_header.decode('utf-8').split("|")
+    data = list(map(int, raw_data[0:4]))
+    if(len(raw_data) > 4):
+        data.extend(raw_data[4:])
+    return data
 
 
 class Message_builder():
@@ -74,7 +69,8 @@ def send_hi_message(socket, source_id, destination_id, sequence_num):
         .send(socket)
 
     raw_response = socket.recv(BUFFER_SIZE)
-    responde_code, designated_id, _ = decode_header(raw_response)
+    response = decode_message(raw_response)
+    responde_code, _, designated_id, _, _ = response
     if(int_code_to_message_type[responde_code] == "ok"):
         return designated_id
     raise Exception("Erro ao enviar a mensagem \"hi\"")
@@ -88,7 +84,7 @@ def send_kill_message(socket, id, server_id, sequence_num):
         .send(socket)
 
     raw_response = socket.recv(BUFFER_SIZE)
-    responde_code, _ = decode_header(raw_response)
+    responde_code, _, _, _  = decode_message(raw_response)
     if(int_code_to_message_type[responde_code] != "ok"):
         raise Exception("Erro ao enviar a mensagem \"hi\"")
 
@@ -103,7 +99,7 @@ def send_origin_message(socket, id, server_id, sequence_num, planet_name_size, p
         .send(socket)
 
     raw_response = socket.recv(BUFFER_SIZE)
-    responde_code, _ = decode_header(raw_response)
+    responde_code, _, _, _ = decode_message(raw_response)
     if(int_code_to_message_type[responde_code] != "ok"):
         raise Exception("Erro ao enviar a mensagem \"origin\"")
 
@@ -126,33 +122,76 @@ def send_creq_message(socket, id, destination_id, sequence_num):
         .send(socket)
     
     raw_response = socket.recv(BUFFER_SIZE)
-    responde_code, _ = decode_header(raw_response)
+    responde_code, _, _, _ = decode_message(raw_response)
     if(int_code_to_message_type[responde_code] != "ok"):
         raise Exception("Erro ao enviar a mensagem \"creq\"")
 
-def send_planet_message(socket, id, client_id, sequence_num):
+def send_clist_message(socket, id, destination_id, sequence_num, client_list):
     Message_builder() \
+        .add_header(message_type_to_int_code["clist"]) \
+        .add_header(id) \
+        .add_header(destination_id) \
+        .add_header(sequence_num) \
+        .add_header(len(client_list)) \
+        .set_message(client_list) \
+        .send(socket)
+    
+    raw_response = socket.recv(BUFFER_SIZE)
+    responde_code, _, _, _ = decode_message(raw_response)
+    if(int_code_to_message_type[responde_code] != "ok"):
+        raise Exception("Erro ao enviar a mensagem \"creq\"")
+
+def send_planet_message(socket, id, client_id, sequence_num, planet=None):
+    message = Message_builder() \
         .add_header(message_type_to_int_code["planet"]) \
         .add_header(id) \
         .add_header(client_id) \
         .add_header(sequence_num) \
-        .send(socket)
-    raw_response = socket.recv(BUFFER_SIZE)
-    responde_code, _ = decode_header(raw_response)
-    if(int_code_to_message_type[responde_code] != "ok"):
-        raise Exception("Erro ao enviar a mensagem \"origin\"")
+    
+    if(planet):
+        message.set_message(planet)
 
-def send_planetlist_message(socket, id, exhibitor_id, sequence_num): 
-    Message_builder() \
+    message.send(socket)
+
+    if(not planet):
+        raw_response = socket.recv(BUFFER_SIZE)
+        responde_code, _, _, _ = decode_message(raw_response)
+        if(int_code_to_message_type[responde_code] != "ok"):
+            raise Exception("Erro ao enviar a mensagem \"planet\"")
+
+def send_planetlist_message(socket, id, destination_id, sequence_num, planet_list=None, wait_for_ok_answer=False): 
+    message = Message_builder() \
         .add_header(message_type_to_int_code["planetlist"]) \
         .add_header(id) \
-        .add_header(exhibitor_id) \
+        .add_header(destination_id) \
         .add_header(sequence_num) \
-        .send(socket)
 
-def send_ok_message(socket, source_id, destination_id, sequence_num):
-    Message_builder() \
+    if(planet_list):
+        message.set_message(planet_list) 
+    
+    message.send(socket)
+
+
+    if(wait_for_ok_answer):
+        raw_response = socket.recv(BUFFER_SIZE)
+        responde_code, _, _, _ = decode_message(raw_response)
+        if(int_code_to_message_type[responde_code] != "ok"):
+            raise Exception("Erro ao enviar a mensagem \"planet\"")
+
+def send_ok_message(socket, source_id, destination_id, sequence_num, msg=None):
+    message = Message_builder() \
         .add_header(message_type_to_int_code["ok"]) \
+        .add_header(source_id) \
+        .add_header(destination_id) \
+        .add_header(sequence_num) \
+        
+    if(msg):
+        message.set_message(msg)
+    message.send(socket)
+
+def send_error_message(socket, source_id, destination_id, sequence_num):
+    Message_builder() \
+        .add_header(message_type_to_int_code["error"]) \
         .add_header(source_id) \
         .add_header(destination_id) \
         .add_header(sequence_num) \
